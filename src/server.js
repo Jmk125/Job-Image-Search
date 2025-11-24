@@ -112,7 +112,7 @@ async function describeImageWithAI(imagePath) {
       {
         role: "system",
         content:
-          "You are a construction-site photo describer. Describe what construction activity, materials, equipment, and stage of work are visible.",
+          "You are a construction progress inspector who writes terse, technical captions. Identify trade (e.g., concrete, structural steel, roofing, MEP rough-in), primary activity, major equipment, materials, location context, and stage of completion.",
       },
       {
         role: "user",
@@ -120,7 +120,7 @@ async function describeImageWithAI(imagePath) {
           {
             type: "text",
             text:
-              "Describe this construction scene in one concise sentence. Focus on the main activity (e.g., foundation work, masonry, steel erection, roofing), visible equipment (e.g., excavator, scaffolding, lifts), and materials.",
+              "Provide a single sentence: start with trade + activity, then materials/equipment, and any QA/QC notes (formwork status, rebar spacing, welds, waterproofing, PPE).",
           },
           {
             type: "image_url",
@@ -253,7 +253,8 @@ app.post("/upload", upload.array("photos", 300), async (req, res) => {
       const relativePath = path.relative(IMAGES_ROOT, absPath);
 
       const description = await describeImageWithAI(absPath);
-      const embedding = await embedText(description);
+      const embeddingText = `${description} | Project:${project} | Shot:${shot_date}`;
+      const embedding = await embedText(embeddingText);
 
       await insertPhoto({
         file_path: relativePath,
@@ -341,64 +342,119 @@ app.get("/", (req, res) => {
       <head>
         <title>Job Photo Search</title>
         <style>
-          body { font-family: system-ui, sans-serif; margin: 20px; }
-          h1 { margin-bottom: 0.5rem; }
-          h2 { margin-top: 2rem; }
-          label { display: block; margin-top: 8px; }
-          input[type="text"], input[type="date"] { padding: 6px; width: 300px; }
-          #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 20px; }
-          .photo-card { border: 1px solid #ddd; padding: 8px; border-radius: 6px; background: #fafafa; }
-          .photo-card img { max-width: 100%; display: block; border-radius: 4px; }
-          .meta { font-size: 12px; color: #555; margin-top: 4px; }
-          button { padding: 6px 12px; margin-top: 8px; cursor: pointer; }
-          .section { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
+          :root {
+            color-scheme: light;
+            --accent: #0d6efd;
+          }
+          body {
+            font-family: system-ui, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background: radial-gradient(circle at 10% 20%, #f5f9ff, #f8f8f8 45%);
+            color: #1f2937;
+          }
+          h1 {
+            margin-bottom: 0.25rem;
+            letter-spacing: -0.02em;
+          }
+          h2 { margin-top: 1.5rem; }
+          p.lead { margin-top: 0; color: #4b5563; }
+          label { display: block; margin-top: 10px; font-weight: 600; }
+          input[type="text"], input[type="date"], input[type="file"] {
+            padding: 10px;
+            width: 320px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            margin-top: 4px;
+            font-size: 14px;
+          }
+          button {
+            padding: 10px 16px;
+            margin-top: 12px;
+            cursor: pointer;
+            background: var(--accent);
+            border: none;
+            color: white;
+            border-radius: 10px;
+            font-weight: 600;
+            box-shadow: 0 6px 14px rgba(13, 110, 253, 0.25);
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+          }
+          button:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(13, 110, 253, 0.28); }
+          button:active { transform: translateY(0); box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2); }
+          .shell {
+            max-width: 1100px;
+            margin: 0 auto;
+          }
+          .section {
+            border: 1px solid #e5e7eb;
+            padding: 16px;
+            border-radius: 14px;
+            margin-bottom: 18px;
+            background: white;
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.05);
+          }
+          #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+          .photo-card { border: 1px solid #e5e7eb; padding: 10px; border-radius: 12px; background: #fdfefe; box-shadow: inset 0 0 0 1px #f3f4f6; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+          .photo-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,0.08); }
+          .photo-card img { max-width: 100%; display: block; border-radius: 10px; margin-bottom: 8px; }
+          .meta { font-size: 13px; color: #4b5563; margin-top: 4px; line-height: 1.4; }
+          .meta strong { color: #111827; }
+          .score { font-size: 12px; color: #6b7280; }
+          .actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+          .pill { display: inline-block; padding: 4px 10px; background: #eef2ff; color: #4338ca; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.01em; }
         </style>
       </head>
       <body>
-        <h1>Job Photo Search</h1>
+        <div class="shell">
+          <h1>Job Photo Search</h1>
+          <p class="lead">Upload field photos, let AI label them, then run detailed searches by trade, activity, or equipment.</p>
 
-        <div class="section">
-          <h2>Upload photos to a project</h2>
-          <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
-            <label>
-              Project name:
-              <input type="text" name="project" placeholder="e.g. NorthRidgevilleHS" required />
-            </label>
-            <label>
-              Shot date (optional, defaults to today):
-              <input type="date" name="shot_date" />
-            </label>
-            <label>
-              Photos:
-              <input type="file" name="photos" multiple accept="image/*" required />
-            </label>
-            <button type="submit">Upload & Index</button>
-          </form>
-        </div>
+          <div class="section">
+            <h2>Upload photos to a project</h2>
+            <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+              <label>
+                Project name:
+                <input type="text" name="project" placeholder="e.g. NorthRidgevilleHS" required />
+              </label>
+              <label>
+                Shot date (optional, defaults to today):
+                <input type="date" name="shot_date" />
+              </label>
+              <label>
+                Photos:
+                <input type="file" name="photos" multiple accept="image/*" required />
+              </label>
+              <button type="submit">Upload & Index</button>
+            </form>
+          </div>
 
-        <div class="section">
-          <h2>Search photos</h2>
-          <form id="searchForm">
-            <label>
-              Search query:
-              <input type="text" id="q" name="q" placeholder="e.g. scaffolding, footing rebar, excavator digging" required />
-            </label>
-            <label>
-              Filter by project (optional):
-              <input type="text" id="projectFilter" name="project" placeholder="exact project name" />
-            </label>
-            <label>
-              Filter by shot date (optional):
-              <input type="date" id="shotDateFilter" name="shot_date" />
-            </label>
-            <button type="submit">Search</button>
-          </form>
-          <div id="results"></div>
+          <div class="section">
+            <h2>Search photos</h2>
+            <form id="searchForm">
+              <label>
+                Search query:
+                <input type="text" id="q" name="q" placeholder="e.g. scaffolding, footing rebar, excavator digging" required />
+              </label>
+              <label>
+                Filter by project (optional):
+                <input type="text" id="projectFilter" name="project" placeholder="exact project name" />
+              </label>
+              <label>
+                Filter by shot date (optional):
+                <input type="date" id="shotDateFilter" name="shot_date" />
+              </label>
+              <button type="submit">Search</button>
+            </form>
+            <div id="results"></div>
+          </div>
         </div>
 
         <script>
           const searchForm = document.getElementById('searchForm');
           const resultsDiv = document.getElementById('results');
+
+          resultsDiv.innerHTML = '<p class="meta">Tip: search by trade + activity ("steel decking being welded", "CMU wall grouted", "waterproofing at podium") and narrow with project or date.</p>';
 
           searchForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -406,7 +462,7 @@ app.get("/", (req, res) => {
             const project = document.getElementById('projectFilter').value;
             const shotDate = document.getElementById('shotDateFilter').value;
 
-            resultsDiv.innerHTML = 'Searching...';
+            resultsDiv.innerHTML = '<p class="meta">Searching...</p>';
 
             const params = new URLSearchParams();
             params.set('q', q);
@@ -421,19 +477,27 @@ app.get("/", (req, res) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
               card.innerHTML = \`
-                <img src="\${r.image_url}" alt="">
+                <img src="\${r.image_url}" alt="Photo from \${r.project || 'project'}">
                 <div class="meta">
-                  <strong>\${r.project || 'Unknown project'}</strong><br/>
-                  \${r.shot_date || ''}<br/>
-                  <em>\${r.description}</em><br/>
-                  Score: \${r.score.toFixed(3)}
+                  <span class="pill">\${r.project || 'Unknown project'}</span><br/>
+                  \${r.shot_date || 'Date unknown'}<br/>
+                  <em>\${r.description}</em>
+                </div>
+                <div class="actions">
+                  <span class="score">Score \${r.score.toFixed(3)}</span>
+                  <button type="button" data-url="\${r.image_url}">Open full-size</button>
                 </div>
               \`;
+              const preview = card.querySelector('img');
+              const openBtn = card.querySelector('button');
+              const openFull = () => window.open(r.image_url, '_blank', 'noopener');
+              preview.addEventListener('click', openFull);
+              openBtn.addEventListener('click', openFull);
               resultsDiv.appendChild(card);
             });
 
             if (!data.results.length) {
-              resultsDiv.innerHTML = '<p>No strong matches found for that search.</p>';
+              resultsDiv.innerHTML = '<p class="meta">No strong matches found for that search.</p>';
             }
           });
         </script>
