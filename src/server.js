@@ -444,7 +444,8 @@ app.get("/", (req, res) => {
         <style>
           :root {
             color-scheme: light;
-            --accent: #4f46e5;
+            --accent: #1d4ed8;
+            --accent-dark: #1e3a8a;
           }
           body {
             font-family: system-ui, sans-serif;
@@ -470,16 +471,16 @@ app.get("/", (req, res) => {
             padding: 10px 16px;
             margin-top: 12px;
             cursor: pointer;
-            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            background: linear-gradient(135deg, var(--accent-dark), var(--accent));
             border: none;
             color: white;
             border-radius: 10px;
             font-weight: 700;
-            box-shadow: 0 10px 30px rgba(79, 70, 229, 0.25);
+            box-shadow: 0 10px 30px rgba(30, 58, 138, 0.25);
             transition: transform 0.1s ease, box-shadow 0.1s ease;
           }
-          button:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(79, 70, 229, 0.28); }
-          button:active { transform: translateY(0); box-shadow: 0 6px 12px rgba(79, 70, 229, 0.2); }
+          button:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(30, 58, 138, 0.28); }
+          button:active { transform: translateY(0); box-shadow: 0 6px 12px rgba(30, 58, 138, 0.2); }
           .shell { max-width: 1100px; margin: 0 auto; }
           .section { border: 1px solid #e5e7eb; padding: 18px; border-radius: 14px; margin-bottom: 18px; background: white; box-shadow: 0 12px 40px rgba(15, 23, 42, 0.05); }
           #results, #projectPhotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
@@ -490,10 +491,10 @@ app.get("/", (req, res) => {
           .meta strong { color: #111827; }
           .score { font-size: 12px; color: #6b7280; }
           .actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
-          .pill { display: inline-block; padding: 4px 10px; background: #eef2ff; color: #4338ca; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.01em; }
+          .pill { display: inline-block; padding: 4px 10px; background: #dbeafe; color: #1e3a8a; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.01em; }
           .tab-bar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
           .tab-btn { padding: 10px 14px; border-radius: 999px; border: 1px solid #e5e7eb; background: #f3f4f6; color: #111827; font-weight: 700; cursor: pointer; }
-          .tab-btn.active { background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; border-color: transparent; box-shadow: 0 10px 30px rgba(79,70,229,0.25); }
+          .tab-btn.active { background: linear-gradient(135deg, var(--accent-dark), var(--accent)); color: white; border-color: transparent; box-shadow: 0 10px 30px rgba(30,58,138,0.25); }
           .tab-panel { display: none; }
           .tab-panel.active { display: block; }
           .status { margin-top: 10px; color: #374151; font-size: 14px; }
@@ -505,6 +506,14 @@ app.get("/", (req, res) => {
           .project-chip strong { color: #111827; }
           .soft { color: #6b7280; font-size: 13px; }
           .danger { background: linear-gradient(135deg, #ef4444, #f97316); box-shadow: 0 8px 20px rgba(239, 68, 68, 0.25); }
+          .lightbox { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: none; justify-content: center; align-items: center; padding: 20px; z-index: 20; }
+          .lightbox.active { display: flex; }
+          .lightbox-card { background: white; border-radius: 16px; padding: 16px; max-width: 90vw; max-height: 90vh; box-shadow: 0 20px 50px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 12px; }
+          .lightbox-card img { max-height: 60vh; width: auto; object-fit: contain; border-radius: 12px; }
+          .lightbox-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+          .lightbox-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+          .lightbox-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+          .ghost { background: transparent; color: #111827; border: 1px solid #e5e7eb; box-shadow: none; }
         </style>
       </head>
       <body>
@@ -513,12 +522,32 @@ app.get("/", (req, res) => {
           <p class="lead">Upload field photos, let AI label them, then search or browse by project.</p>
 
           <div class="tab-bar">
-            <button class="tab-btn active" data-tab-target="uploadTab">Upload</button>
-            <button class="tab-btn" data-tab-target="searchTab">Search</button>
+            <button class="tab-btn active" data-tab-target="searchTab">Search</button>
+            <button class="tab-btn" data-tab-target="uploadTab">Upload</button>
             <button class="tab-btn" data-tab-target="projectsTab">Projects</button>
           </div>
 
-          <div id="uploadTab" class="tab-panel active section">
+          <div id="searchTab" class="tab-panel active section">
+            <h2>Search photos</h2>
+            <form id="searchForm">
+              <label>
+                Search description or concepts:
+                <input type="text" id="q" name="q" placeholder="e.g. scaffolding, footing rebar, excavator digging" required />
+              </label>
+              <label>
+                Filter by project (optional):
+                <input type="text" id="projectFilter" name="project" placeholder="exact project name" />
+              </label>
+              <label>
+                Filter by shot date (optional):
+                <input type="date" id="shotDateFilter" name="shot_date" />
+              </label>
+              <button type="submit">Search</button>
+            </form>
+            <div id="results"></div>
+          </div>
+
+          <div id="uploadTab" class="tab-panel section">
             <h2>Upload photos</h2>
             <p class="soft">Choose an existing project or create a new one. We'll index the images as they're uploaded.</p>
             <div class="inline-group">
@@ -552,31 +581,29 @@ app.get("/", (req, res) => {
             </form>
           </div>
 
-          <div id="searchTab" class="tab-panel section">
-            <h2>Search photos</h2>
-            <form id="searchForm">
-              <label>
-                Search query:
-                <input type="text" id="q" name="q" placeholder="e.g. scaffolding, footing rebar, excavator digging" required />
-              </label>
-              <label>
-                Filter by project (optional):
-                <input type="text" id="projectFilter" name="project" placeholder="exact project name" />
-              </label>
-              <label>
-                Filter by shot date (optional):
-                <input type="date" id="shotDateFilter" name="shot_date" />
-              </label>
-              <button type="submit">Search</button>
-            </form>
-            <div id="results"></div>
-          </div>
-
           <div id="projectsTab" class="tab-panel section">
             <h2>Browse by project</h2>
             <p class="soft">See indexed projects, open images full-size, or delete unwanted shots.</p>
             <div id="projectsList" class="inline-group"></div>
             <div id="projectPhotos"></div>
+          </div>
+        </div>
+
+        <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Image viewer">
+          <div class="lightbox-card">
+            <div class="lightbox-header">
+              <div class="meta" id="lightboxTitle"></div>
+              <button type="button" class="ghost" id="closeLightbox">Close</button>
+            </div>
+            <img id="lightboxImage" src="" alt="Expanded view" />
+            <div class="lightbox-meta">
+              <div class="meta" id="lightboxCaption"></div>
+              <span class="score" id="lightboxCounter"></span>
+            </div>
+            <div class="lightbox-actions">
+              <button type="button" class="ghost" id="prevLightbox">Previous</button>
+              <button type="button" id="nextLightbox">Next</button>
+            </div>
           </div>
         </div>
 
@@ -590,6 +617,18 @@ app.get("/", (req, res) => {
           const projectsList = document.getElementById('projectsList');
           const projectPhotos = document.getElementById('projectPhotos');
           const existingProjectSelect = document.getElementById('existingProject');
+          const lightbox = document.getElementById('lightbox');
+          const lightboxImage = document.getElementById('lightboxImage');
+          const lightboxTitle = document.getElementById('lightboxTitle');
+          const lightboxCaption = document.getElementById('lightboxCaption');
+          const lightboxCounter = document.getElementById('lightboxCounter');
+          const closeLightboxBtn = document.getElementById('closeLightbox');
+          const prevLightboxBtn = document.getElementById('prevLightbox');
+          const nextLightboxBtn = document.getElementById('nextLightbox');
+
+          let lightboxItems = [];
+          let lightboxIndex = 0;
+          let latestSearchResults = [];
 
           resultsDiv.innerHTML = '<p class="meta">Tip: search by trade + activity ("steel decking being welded", "CMU wall grouted", "waterproofing at podium") and narrow with project or date.</p>';
 
@@ -607,6 +646,44 @@ app.get("/", (req, res) => {
 
           document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => setActiveTab(btn.dataset.tabTarget));
+          });
+
+          function openLightbox(items, index) {
+            lightboxItems = items;
+            lightboxIndex = index;
+            renderLightbox();
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
+          }
+
+          function closeLightbox() {
+            lightbox.classList.remove('active');
+            document.body.style.overflow = '';
+          }
+
+          function renderLightbox() {
+            if (!lightboxItems.length) return;
+            const current = lightboxItems[lightboxIndex];
+            lightboxImage.src = current.image_url;
+            lightboxImage.alt = current.description || 'Photo detail';
+            lightboxTitle.textContent = (current.project || 'Project') + ' — ' + (current.shot_date || 'Date unknown');
+            lightboxCaption.textContent = current.description || 'No description available.';
+            lightboxCounter.textContent = (lightboxIndex + 1) + ' of ' + lightboxItems.length;
+          }
+
+          closeLightboxBtn.addEventListener('click', closeLightbox);
+          lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) closeLightbox();
+          });
+          prevLightboxBtn.addEventListener('click', () => {
+            if (!lightboxItems.length) return;
+            lightboxIndex = (lightboxIndex - 1 + lightboxItems.length) % lightboxItems.length;
+            renderLightbox();
+          });
+          nextLightboxBtn.addEventListener('click', () => {
+            if (!lightboxItems.length) return;
+            lightboxIndex = (lightboxIndex + 1) % lightboxItems.length;
+            renderLightbox();
           });
 
           async function loadProjects() {
@@ -648,7 +725,7 @@ app.get("/", (req, res) => {
             const data = await resp.json();
 
             projectPhotos.innerHTML = '';
-            (data.photos || []).forEach(r => {
+            (data.photos || []).forEach((r, idx) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
               card.innerHTML = \`
@@ -666,7 +743,7 @@ app.get("/", (req, res) => {
               const preview = card.querySelector('img');
               const openBtn = card.querySelector('button[data-url]');
               const deleteBtn = card.querySelector('button[data-id]');
-              const openFull = () => window.open(r.image_url, '_blank', 'noopener');
+              const openFull = () => openLightbox(data.photos, idx);
               preview.addEventListener('click', openFull);
               openBtn.addEventListener('click', openFull);
               deleteBtn.addEventListener('click', async () => {
@@ -769,8 +846,9 @@ app.get("/", (req, res) => {
             const resp = await fetch('/search?' + params.toString());
             const data = await resp.json();
 
+            latestSearchResults = data.results || [];
             resultsDiv.innerHTML = '';
-            data.results.forEach(r => {
+            latestSearchResults.forEach((r, idx) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
               card.innerHTML = \`
@@ -787,13 +865,13 @@ app.get("/", (req, res) => {
               \`;
               const preview = card.querySelector('img');
               const openBtn = card.querySelector('button');
-              const openFull = () => window.open(r.image_url, '_blank', 'noopener');
+              const openFull = () => openLightbox(latestSearchResults, idx);
               preview.addEventListener('click', openFull);
               openBtn.addEventListener('click', openFull);
               resultsDiv.appendChild(card);
             });
 
-            if (!data.results.length) {
+            if (!latestSearchResults.length) {
               resultsDiv.innerHTML = '<p class="meta">No strong matches found for that search.</p>';
             }
           });
