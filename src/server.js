@@ -959,11 +959,10 @@ app.get("/", (req, res) => {
             (passes || []).forEach((p) => {
               const item = document.createElement('div');
               item.className = 'context-item';
-              item.innerHTML = `
-                <strong>${p.label || 'Pass'}</strong>
-                <div class="meta">${p.description || 'No description available.'}</div>
-                <div class="soft">${p.created_at || ''}</div>
-              `;
+              item.innerHTML =
+                '<strong>' + (p.label || 'Pass') + '</strong>' +
+                '<div class="meta">' + (p.description || 'No description available.') + '</div>' +
+                '<div class="soft">' + (p.created_at || '') + '</div>';
               contextList.appendChild(item);
             });
             contextModal.classList.add('active');
@@ -1033,19 +1032,19 @@ app.get("/", (req, res) => {
             (data.photos || []).forEach((r, idx) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
-              card.innerHTML =                 `<img src="\${r.image_url}" alt="Photo from \${r.project || 'project'}">
-                <div class="meta">
-                  <span class="pill">\${r.project || 'Unknown project'}</span><br/>
-                  \${r.shot_date || 'Date unknown'}
-                </div>
-                <div class="actions">
-                  <div class="stack">
-                    <button type="button" data-context="\${r.id}">View contexts</button>
-                    <button type="button" data-url="\${r.image_url}">Open full-size</button>
-                  </div>
-                  <button type="button" data-id="\${r.id}" class="danger">Delete</button>
-                </div>
-              `;
+              card.innerHTML =
+                '<img src="' + r.image_url + '" alt="Photo from ' + (r.project || 'project') + '">' +
+                '<div class="meta">' +
+                '<span class="pill">' + (r.project || 'Unknown project') + '</span><br/>' +
+                (r.shot_date || 'Date unknown') +
+                '</div>' +
+                '<div class="actions">' +
+                '<div class="stack">' +
+                '<button type="button" data-context="' + r.id + '">View contexts</button>' +
+                '<button type="button" data-url="' + r.image_url + '">Open full-size</button>' +
+                '</div>' +
+                '<button type="button" data-id="' + r.id + '" class="danger">Delete</button>' +
+                '</div>';
               const preview = card.querySelector('img');
               const openBtn = card.querySelector('button[data-url]');
               const contextBtn = card.querySelector('button[data-context]');
@@ -1054,7 +1053,8 @@ app.get("/", (req, res) => {
               preview.addEventListener('click', openFull);
               openBtn.addEventListener('click', openFull);
               contextBtn.addEventListener('click', () => {
-                openContextModal(r.passes || [], `Contexts for ${r.project || 'project'} (${r.shot_date || 'Date unknown'})`);
+                const title = 'Contexts for ' + (r.project || 'project') + ' (' + (r.shot_date || 'Date unknown') + ')';
+                openContextModal(r.passes || [], title);
               });
               deleteBtn.addEventListener('click', async () => {
                 deleteBtn.disabled = true;
@@ -1091,16 +1091,15 @@ app.get("/", (req, res) => {
             (data.photos || []).forEach((r) => {
               const card = document.createElement('label');
               card.className = 'checkbox-card';
-              card.innerHTML = `
-                <input type="checkbox" name="focusPhoto" value="${r.id}" />
-                <div>
-                  <div class="meta">
-                    <span class="pill">${r.project || 'Unknown project'}</span><br/>
-                    ${r.shot_date || 'Date unknown'}
-                  </div>
-                  <div class="soft">${(r.passes || []).length} pass(es) available</div>
-                </div>
-              `;
+              card.innerHTML =
+                '<input type="checkbox" name="focusPhoto" value="' + r.id + '" />' +
+                '<div>' +
+                '<div class="meta">' +
+                '<span class="pill">' + (r.project || 'Unknown project') + '</span><br/>' +
+                (r.shot_date || 'Date unknown') +
+                '</div>' +
+                '<div class="soft">' + ((r.passes || []).length) + ' pass(es) available</div>' +
+                '</div>';
               focusPhotos.appendChild(card);
             });
 
@@ -1163,12 +1162,13 @@ app.get("/", (req, res) => {
                 const job = await pollResp.json();
                 const pct = Math.round((job.done / job.total) * 100);
                 focusProgress.style.width = pct + '%';
-                focusStatus.textContent = `Processing ${job.done}/${job.total} photos...`;
+                focusStatus.textContent = 'Processing ' + job.done + '/' + job.total + ' photos...';
 
                 if (job.status === 'completed') {
                   clearInterval(focusPoller);
                   focusPoller = null;
-                  focusStatus.textContent = `Focused pass complete for ${project}. ${job.errors?.length ? 'Some items failed.' : 'All items processed.'}`;
+                  const summary = job.errors?.length ? 'Some items failed.' : 'All items processed.';
+                  focusStatus.textContent = 'Focused pass complete for ' + project + '. ' + summary;
                   runFocusBtn.disabled = false;
                   runFocusBtn.textContent = 'Run focused pass';
                   loadFocusPhotos(project);
