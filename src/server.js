@@ -629,6 +629,7 @@ app.get("/", (req, res) => {
           let lightboxItems = [];
           let lightboxIndex = 0;
           let latestSearchResults = [];
+          let indexingTimer = null;
 
           resultsDiv.innerHTML = '<p class="meta">Tip: search by trade + activity ("steel decking being welded", "CMU wall grouted", "waterproofing at podium") and narrow with project or date.</p>';
 
@@ -771,6 +772,10 @@ app.get("/", (req, res) => {
             e.preventDefault();
             uploadStatus.textContent = '';
             uploadProgress.style.width = '0%';
+            if (indexingTimer) {
+              clearInterval(indexingTimer);
+              indexingTimer = null;
+            }
 
             const mode = document.querySelector('input[name="projectMode"]:checked').value;
             const project = mode === 'existing'
@@ -807,9 +812,23 @@ app.get("/", (req, res) => {
               }
             });
 
+            xhr.upload.addEventListener('load', () => {
+              uploadStatus.textContent = 'Upload complete. Indexing photos...';
+              let pct = Math.max(60, parseInt(uploadProgress.style.width, 10) || 0);
+              uploadProgress.style.width = pct + '%';
+              indexingTimer = setInterval(() => {
+                pct = Math.min(95, pct + 1.5);
+                uploadProgress.style.width = pct + '%';
+              }, 300);
+            });
+
             xhr.onload = () => {
               uploadBtn.disabled = false;
               uploadBtn.textContent = 'Upload & Index';
+              if (indexingTimer) {
+                clearInterval(indexingTimer);
+                indexingTimer = null;
+              }
               uploadProgress.style.width = '100%';
               if (xhr.status >= 200 && xhr.status < 300) {
                 uploadStatus.textContent = 'Upload complete. Indexing finished for ' + project + '.';
@@ -824,6 +843,10 @@ app.get("/", (req, res) => {
             xhr.onerror = () => {
               uploadBtn.disabled = false;
               uploadBtn.textContent = 'Upload & Index';
+              if (indexingTimer) {
+                clearInterval(indexingTimer);
+                indexingTimer = null;
+              }
               uploadStatus.textContent = 'Upload failed. Please retry.';
             };
 
