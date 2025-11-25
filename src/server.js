@@ -901,7 +901,7 @@ app.get("/", (req, res) => {
           let lightboxIndex = 0;
           let latestSearchResults = [];
           let indexingTimer = null;
-          focusPhotos.innerHTML = '<p class="meta">Choose project(s) to select photos for a focused pass.</p>';
+          focusPhotos.innerHTML = '<p class="meta">Choose project(s) to run a focused pass on all of their photos.</p>';
 
           resultsDiv.innerHTML = '<p class="meta">Tip: search by trade + activity ("steel decking being welded", "CMU wall grouted", "waterproofing at podium") and narrow with project or date.</p>';
 
@@ -986,6 +986,7 @@ app.get("/", (req, res) => {
           });
 
           let selectedFocusProjects = [];
+          let focusSelectedPhotoIds = [];
 
           function getSelectedFocusProjects() {
             return Array.from(document.querySelectorAll('input[name="focusProject"]:checked')).map(
@@ -1105,43 +1106,57 @@ app.get("/", (req, res) => {
 
           async function loadFocusPhotosForProjects(projects) {
             if (!projects.length) {
-              focusPhotos.innerHTML = '<p class="meta">Choose project(s) to select photos for re-indexing.</p>';
+              focusSelectedPhotoIds = [];
+              focusPhotos.innerHTML = '<p class="meta">Choose project(s) to run a focused pass on all photos.</p>';
               return;
             }
-            focusPhotos.innerHTML = '<p class="meta">Loading photos for ' + projects.join(', ') + '...</p>';
+            focusPhotos.innerHTML = '<p class="meta">Loading photo counts for ' + projects.join(', ') + '...</p>';
 
-            const results = [];
+            const projectSummaries = [];
+            focusSelectedPhotoIds = [];
+
             for (const project of projects) {
               try {
                 const encoded = encodeURIComponent(project);
                 const resp = await fetch('/projects/' + encoded + '/photos');
                 const data = await resp.json();
-                (data.photos || []).forEach((photo) => results.push(photo));
+                const photos = data.photos || [];
+                const passTotal = photos.reduce((acc, p) => acc + ((p.passes || []).length || 0), 0);
+                projectSummaries.push({
+                  project,
+                  photoCount: photos.length,
+                  passCount: passTotal,
+                });
+                photos.forEach((photo) => focusSelectedPhotoIds.push(photo.id));
               } catch (err) {
                 console.error('Failed to load project', project, err);
               }
             }
 
+            if (!focusSelectedPhotoIds.length) {
+              focusPhotos.innerHTML = '<p class="meta">No photos found for the selected project(s).</p>';
+              return;
+            }
+
             focusPhotos.innerHTML = '';
 
-            results.forEach((r) => {
-              const card = document.createElement('label');
+            projectSummaries.forEach((p) => {
+              const card = document.createElement('div');
               card.className = 'checkbox-card';
               card.innerHTML =
-                '<input type="checkbox" name="focusPhoto" value="' + r.id + '" />' +
                 '<div>' +
-                '<div class="meta">' +
-                '<span class="pill">' + (r.project || 'Unknown project') + '</span><br/>' +
-                (r.shot_date || 'Date unknown') +
-                '</div>' +
-                '<div class="soft">' + ((r.passes || []).length) + ' pass(es) available</div>' +
+                '<strong>' + p.project + '</strong>' +
+                '<div class="soft">' + p.photoCount + ' photo(s) selected</div>' +
+                '<div class="soft">' + p.passCount + ' pass(es) already saved</div>' +
                 '</div>';
               focusPhotos.appendChild(card);
             });
 
-            if (!results.length) {
-              focusPhotos.innerHTML = '<p class="meta">No photos found for the selected project(s).</p>';
-            }
+            const totalPhotos = focusSelectedPhotoIds.length;
+            const summary = document.createElement('p');
+            summary.className = 'meta';
+            summary.textContent = 'All ' + totalPhotos + ' photo(s) across the selected project(s) will be re-indexed.';
+            focusPhotos.appendChild(summary);
           }
 
           focusProjectList.addEventListener('change', () => {
@@ -1160,14 +1175,13 @@ app.get("/", (req, res) => {
               return;
             }
 
-            const selected = Array.from(document.querySelectorAll('input[name="focusPhoto"]:checked')).map((c) => c.value);
-            if (!selected.length) {
-              focusStatus.textContent = 'Select at least one photo.';
+            if (!focusSelectedPhotoIds.length) {
+              focusStatus.textContent = 'No photos found for the selected project(s).';
               return;
             }
 
             const payload = {
-              photoIds: selected,
+              photoIds: focusSelectedPhotoIds,
               focus: focusPrompt.value.trim(),
               label: focusLabel.value.trim(),
             };
