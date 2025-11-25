@@ -485,6 +485,7 @@ app.get("/search", async (req, res) => {
       project: row.project,
       shot_date: row.shot_date,
       description: row.bestDescription,
+      best_pass_label: row.bestPassLabel,
       score: row.score,
       passes: row.passes,
       image_url: `/images/${row.file_path.replace(/\\/g, "/")}`,
@@ -1121,7 +1122,10 @@ app.get("/", (req, res) => {
                 const resp = await fetch('/projects/' + encoded + '/photos');
                 const data = await resp.json();
                 const photos = data.photos || [];
-                const passTotal = photos.reduce((acc, p) => acc + ((p.passes || []).length || 0), 0);
+                const passTotal = photos.reduce((acc, p) => {
+                  const focused = (p.passes || []).filter((pass) => !String(pass.id || '').startsWith('base-'));
+                  return acc + focused.length;
+                }, 0);
                 projectSummaries.push({
                   project,
                   photoCount: photos.length,
@@ -1342,12 +1346,15 @@ app.get("/", (req, res) => {
             latestSearchResults.forEach((r, idx) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
+              const focusedCount = (r.passes || []).filter((p) => !String(p.id || '').startsWith('base-')).length;
               card.innerHTML = \`
                 <img src="\${r.image_url}" alt="Photo from \${r.project || 'project'}">
                 <div class="meta">
                   <span class="pill">\${r.project || 'Unknown project'}</span><br/>
                   \${r.shot_date || 'Date unknown'}<br/>
                   <em>\${r.description}</em>
+                  <div class="soft">Matched pass: \${r.best_pass_label || 'Base'}</div>
+                  <div class="soft">Passes: \${(r.passes || []).length} total (\${focusedCount} focused)</div>
                 </div>
                 <div class="actions">
                   <span class="score">Score \${r.score.toFixed(3)}</span>
