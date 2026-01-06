@@ -35,7 +35,8 @@ db.serialize(() => {
       project TEXT,
       shot_date TEXT,
       description TEXT,
-      embedding BLOB
+      embedding BLOB,
+      bookmarked INTEGER DEFAULT 0
     );
   `);
 
@@ -316,6 +317,41 @@ function deletePassesForPhoto(photoId) {
   });
 }
 
+function toggleBookmark(photoId) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE photos SET bookmarked = NOT bookmarked WHERE id = ?",
+      [photoId],
+      function (err) {
+        if (err) reject(err);
+        else {
+          db.get(
+            "SELECT bookmarked FROM photos WHERE id = ?",
+            [photoId],
+            (err, row) => {
+              if (err) reject(err);
+              else resolve({ bookmarked: row?.bookmarked || 0 });
+            }
+          );
+        }
+      }
+    );
+  });
+}
+
+function getBookmarkedPhotos() {
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT * FROM photos WHERE bookmarked = 1 ORDER BY shot_date DESC, id DESC",
+      [],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      }
+    );
+  });
+}
+
 // ---------- Multer upload config ----------
 
 const storage = multer.diskStorage({
@@ -585,6 +621,62 @@ app.delete("/photos/:id", async (req, res) => {
   }
 });
 
+// Toggle bookmark
+app.post("/photos/:id/bookmark", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const row = await getPhotoById(id);
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    const result = await toggleBookmark(id);
+    res.json({ ok: true, bookmarked: result.bookmarked });
+  } catch (err) {
+    console.error("Toggle bookmark error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// Get bookmarked photos
+app.get("/bookmarked", async (req, res) => {
+  try {
+    const rows = await getBookmarkedPhotos();
+    const withPasses = await Promise.all(
+      rows.map(async (row) => {
+        const passes = await getPassesForPhoto(row.id);
+        return {
+          ...row,
+          passes: [
+            {
+              id: `base-${row.id}`,
+              label: "Base",
+              description: row.description,
+              created_at: row.shot_date,
+            },
+            ...passes.map((p) => ({
+              id: p.id,
+              label: p.pass_label || "Focused pass",
+              description: p.description,
+              created_at: p.created_at,
+            })),
+          ],
+        };
+      })
+    );
+
+    const photos = withPasses.map((row) => ({
+      ...row,
+      image_url: `/images/${row.file_path.replace(/\\/g, "/")}`,
+    }));
+
+    res.json({ photos });
+  } catch (err) {
+    console.error("Get bookmarked photos error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 // Kick off focused re-index job
 app.post("/reindex", async (req, res) => {
   const photoIds = Array.isArray(req.body.photoIds)
@@ -743,6 +835,12 @@ app.get("/", (req, res) => {
           .context-item strong { display: inline-block; margin-bottom: 4px; color: #111827; }
           .reindex-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
           .checkbox-card { border: 1px solid #e5e7eb; padding: 10px; border-radius: 12px; background: #f9fafb; display: flex; gap: 8px; align-items: flex-start; }
+          .bookmark-btn { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 20px; transition: transform 0.1s ease; box-shadow: none; margin: 0; }
+          .bookmark-btn:hover { transform: scale(1.1); }
+          .bookmark-btn:active { transform: scale(0.95); }
+          .bookmark-btn.bookmarked { color: #1d4ed8; }
+          .bookmark-btn:not(.bookmarked) { color: #9ca3af; }
+          #bookmarkedPhotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
         </style>
       </head>
       <body>
@@ -752,6 +850,7 @@ app.get("/", (req, res) => {
 
           <div class="tab-bar">
             <button class="tab-btn active" data-tab-target="searchTab">Search</button>
+            <button class="tab-btn" data-tab-target="bookmarkedTab">Bookmarked</button>
             <button class="tab-btn" data-tab-target="uploadTab">Upload</button>
             <button class="tab-btn" data-tab-target="focusTab">Focused indexing</button>
             <button class="tab-btn" data-tab-target="projectsTab">Projects</button>
@@ -775,6 +874,12 @@ app.get("/", (req, res) => {
               <button type="submit">Search</button>
             </form>
             <div id="results"></div>
+          </div>
+
+          <div id="bookmarkedTab" class="tab-panel section">
+            <h2>Bookmarked photos</h2>
+            <p class="soft">Your bookmarked photos appear here for quick access.</p>
+            <div id="bookmarkedPhotos"></div>
           </div>
 
           <div id="uploadTab" class="tab-panel section">
@@ -844,7 +949,10 @@ app.get("/", (req, res) => {
           <div class="lightbox-card">
             <div class="lightbox-header">
               <div class="meta" id="lightboxTitle"></div>
-              <button type="button" class="ghost" id="closeLightbox">Close</button>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" class="bookmark-btn" id="lightboxBookmark" title="Bookmark this photo">🔖</button>
+                <button type="button" class="ghost" id="closeLightbox">Close</button>
+              </div>
             </div>
             <img id="lightboxImage" src="" alt="Expanded view" />
             <div class="lightbox-meta">
@@ -871,6 +979,7 @@ app.get("/", (req, res) => {
         <script>
           const searchForm = document.getElementById('searchForm');
           const resultsDiv = document.getElementById('results');
+          const bookmarkedPhotos = document.getElementById('bookmarkedPhotos');
           const uploadForm = document.getElementById('uploadForm');
           const uploadStatus = document.getElementById('uploadStatus');
           const uploadProgress = document.getElementById('uploadProgress');
@@ -890,6 +999,7 @@ app.get("/", (req, res) => {
           const lightboxTitle = document.getElementById('lightboxTitle');
           const lightboxCaption = document.getElementById('lightboxCaption');
           const lightboxCounter = document.getElementById('lightboxCounter');
+          const lightboxBookmark = document.getElementById('lightboxBookmark');
           const closeLightboxBtn = document.getElementById('closeLightbox');
           const prevLightboxBtn = document.getElementById('prevLightbox');
           const nextLightboxBtn = document.getElementById('nextLightbox');
@@ -901,10 +1011,99 @@ app.get("/", (req, res) => {
           let lightboxItems = [];
           let lightboxIndex = 0;
           let latestSearchResults = [];
+          let latestBookmarkedPhotos = [];
           let indexingTimer = null;
           focusPhotos.innerHTML = '<p class="meta">Choose project(s) to run a focused pass on all of their photos.</p>';
 
           resultsDiv.innerHTML = '<p class="meta">Tip: search by trade + activity ("steel decking being welded", "CMU wall grouted", "waterproofing at podium") and narrow with project or date.</p>';
+
+          async function toggleBookmark(photoId, button) {
+            try {
+              const resp = await fetch('/photos/' + photoId + '/bookmark', { method: 'POST' });
+              const data = await resp.json();
+              if (resp.ok) {
+                const isBookmarked = data.bookmarked === 1;
+                button.classList.toggle('bookmarked', isBookmarked);
+                button.textContent = isBookmarked ? '🔖' : '🔖';
+                button.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this photo';
+
+                // Update lightbox item if present
+                const lightboxItem = lightboxItems.find(item => item.id === photoId);
+                if (lightboxItem) {
+                  lightboxItem.bookmarked = isBookmarked ? 1 : 0;
+                }
+
+                // Update latestSearchResults if present
+                const searchItem = latestSearchResults.find(item => item.id === photoId);
+                if (searchItem) {
+                  searchItem.bookmarked = isBookmarked ? 1 : 0;
+                }
+
+                // Update latestBookmarkedPhotos if present
+                const bookmarkedItem = latestBookmarkedPhotos.find(item => item.id === photoId);
+                if (bookmarkedItem) {
+                  bookmarkedItem.bookmarked = isBookmarked ? 1 : 0;
+                }
+
+                return isBookmarked;
+              }
+            } catch (err) {
+              console.error('Error toggling bookmark:', err);
+            }
+          }
+
+          async function loadBookmarkedPhotos() {
+            bookmarkedPhotos.innerHTML = '<p class="meta">Loading bookmarked photos...</p>';
+            try {
+              const resp = await fetch('/bookmarked');
+              const data = await resp.json();
+              latestBookmarkedPhotos = data.photos || [];
+
+              bookmarkedPhotos.innerHTML = '';
+              if (!latestBookmarkedPhotos.length) {
+                bookmarkedPhotos.innerHTML = '<p class="meta">No bookmarked photos yet. Click the bookmark icon on any photo to save it here.</p>';
+                return;
+              }
+
+              latestBookmarkedPhotos.forEach((r, idx) => {
+                const card = document.createElement('div');
+                card.className = 'photo-card';
+                card.innerHTML = \`
+                  <img src="\${r.image_url}" alt="Photo from \${r.project || 'project'}">
+                  <div class="meta">
+                    <span class="pill">\${r.project || 'Unknown project'}</span><br/>
+                    \${r.shot_date || 'Date unknown'}<br/>
+                    <em>\${r.description}</em>
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="bookmark-btn bookmarked" data-id="\${r.id}" title="Remove bookmark">🔖</button>
+                    <button type="button" data-url="\${r.image_url}">Open full-size</button>
+                  </div>
+                \`;
+                const preview = card.querySelector('img');
+                const openBtn = card.querySelector('button[data-url]');
+                const bookmarkBtn = card.querySelector('.bookmark-btn');
+                const openFull = () => openLightbox(latestBookmarkedPhotos, idx);
+                preview.addEventListener('click', openFull);
+                openBtn.addEventListener('click', openFull);
+                bookmarkBtn.addEventListener('click', async () => {
+                  const isBookmarked = await toggleBookmark(r.id, bookmarkBtn);
+                  if (isBookmarked === false) {
+                    // Remove from view if unbookmarked
+                    card.remove();
+                    latestBookmarkedPhotos = latestBookmarkedPhotos.filter(item => item.id !== r.id);
+                    if (!latestBookmarkedPhotos.length) {
+                      bookmarkedPhotos.innerHTML = '<p class="meta">No bookmarked photos yet. Click the bookmark icon on any photo to save it here.</p>';
+                    }
+                  }
+                });
+                bookmarkedPhotos.appendChild(card);
+              });
+            } catch (err) {
+              bookmarkedPhotos.innerHTML = '<p class="meta">Error loading bookmarked photos.</p>';
+              console.error('Error loading bookmarked photos:', err);
+            }
+          }
 
           function setActiveTab(targetId) {
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -915,6 +1114,9 @@ app.get("/", (req, res) => {
             });
             if (targetId === 'projectsTab' || targetId === 'focusTab') {
               loadProjects();
+            }
+            if (targetId === 'bookmarkedTab') {
+              loadBookmarkedPhotos();
             }
           }
 
@@ -943,11 +1145,23 @@ app.get("/", (req, res) => {
             lightboxTitle.textContent = (current.project || 'Project') + ' — ' + (current.shot_date || 'Date unknown');
             lightboxCaption.textContent = current.description || 'No description available.';
             lightboxCounter.textContent = (lightboxIndex + 1) + ' of ' + lightboxItems.length;
+
+            // Update bookmark button state
+            const isBookmarked = current.bookmarked === 1;
+            lightboxBookmark.classList.toggle('bookmarked', isBookmarked);
+            lightboxBookmark.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this photo';
+            lightboxBookmark.dataset.photoId = current.id;
           }
 
           closeLightboxBtn.addEventListener('click', closeLightbox);
           lightbox.addEventListener('click', (e) => {
             if (e.target === lightbox) closeLightbox();
+          });
+          lightboxBookmark.addEventListener('click', () => {
+            const photoId = parseInt(lightboxBookmark.dataset.photoId, 10);
+            if (photoId) {
+              toggleBookmark(photoId, lightboxBookmark);
+            }
           });
           prevLightboxBtn.addEventListener('click', () => {
             if (!lightboxItems.length) return;
@@ -1060,6 +1274,7 @@ app.get("/", (req, res) => {
             (data.photos || []).forEach((r, idx) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
+              const isBookmarked = r.bookmarked === 1;
               card.innerHTML =
                 '<img src="' + r.image_url + '" alt="Photo from ' + (r.project || 'project') + '">' +
                 '<div class="meta">' +
@@ -1068,6 +1283,7 @@ app.get("/", (req, res) => {
                 '</div>' +
                 '<div class="actions">' +
                 '<div class="stack">' +
+                '<button type="button" class="bookmark-btn ' + (isBookmarked ? 'bookmarked' : '') + '" data-bookmark-id="' + r.id + '" title="' + (isBookmarked ? 'Remove bookmark' : 'Bookmark this photo') + '">🔖</button>' +
                 '<button type="button" data-context="' + r.id + '">View contexts</button>' +
                 '<button type="button" data-url="' + r.image_url + '">Open full-size</button>' +
                 '</div>' +
@@ -1077,9 +1293,11 @@ app.get("/", (req, res) => {
               const openBtn = card.querySelector('button[data-url]');
               const contextBtn = card.querySelector('button[data-context]');
               const deleteBtn = card.querySelector('button[data-id]');
+              const bookmarkBtn = card.querySelector('.bookmark-btn');
               const openFull = () => openLightbox(data.photos, idx);
               preview.addEventListener('click', openFull);
               openBtn.addEventListener('click', openFull);
+              bookmarkBtn.addEventListener('click', () => toggleBookmark(r.id, bookmarkBtn));
               contextBtn.addEventListener('click', () => {
                 const title = 'Contexts for ' + (r.project || 'project') + ' (' + (r.shot_date || 'Date unknown') + ')';
                 openContextModal(r.passes || [], title);
@@ -1347,6 +1565,7 @@ app.get("/", (req, res) => {
               const card = document.createElement('div');
               card.className = 'photo-card';
               const focusedCount = (r.passes || []).filter((p) => !String(p.id || '').startsWith('base-')).length;
+              const isBookmarked = r.bookmarked === 1;
               card.innerHTML = \`
                 <img src="\${r.image_url}" alt="Photo from \${r.project || 'project'}">
                 <div class="meta">
@@ -1357,15 +1576,20 @@ app.get("/", (req, res) => {
                   <div class="soft">Passes: \${(r.passes || []).length} total (\${focusedCount} focused)</div>
                 </div>
                 <div class="actions">
-                  <span class="score">Score \${r.score.toFixed(3)}</span>
+                  <div class="stack">
+                    <button type="button" class="bookmark-btn \${isBookmarked ? 'bookmarked' : ''}" data-id="\${r.id}" title="\${isBookmarked ? 'Remove bookmark' : 'Bookmark this photo'}">🔖</button>
+                    <span class="score">Score \${r.score.toFixed(3)}</span>
+                  </div>
                   <button type="button" data-url="\${r.image_url}">Open full-size</button>
                 </div>
               \`;
               const preview = card.querySelector('img');
-              const openBtn = card.querySelector('button');
+              const openBtn = card.querySelector('button[data-url]');
+              const bookmarkBtn = card.querySelector('.bookmark-btn');
               const openFull = () => openLightbox(latestSearchResults, idx);
               preview.addEventListener('click', openFull);
               openBtn.addEventListener('click', openFull);
+              bookmarkBtn.addEventListener('click', () => toggleBookmark(r.id, bookmarkBtn));
               resultsDiv.appendChild(card);
             });
 
