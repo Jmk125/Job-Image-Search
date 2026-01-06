@@ -52,6 +52,24 @@ db.serialize(() => {
       FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
     );
   `);
+
+  // Migration: Add bookmarked column to existing databases
+  db.all("PRAGMA table_info(photos)", [], (err, columns) => {
+    if (err) {
+      console.error("Error checking photos table schema:", err);
+      return;
+    }
+    const hasBookmarked = columns.some(col => col.name === 'bookmarked');
+    if (!hasBookmarked) {
+      db.run("ALTER TABLE photos ADD COLUMN bookmarked INTEGER DEFAULT 0", (err) => {
+        if (err) {
+          console.error("Error adding bookmarked column:", err);
+        } else {
+          console.log("✓ Added bookmarked column to existing photos table");
+        }
+      });
+    }
+  });
 });
 
 // Project summary helper
@@ -835,11 +853,12 @@ app.get("/", (req, res) => {
           .context-item strong { display: inline-block; margin-bottom: 4px; color: #111827; }
           .reindex-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
           .checkbox-card { border: 1px solid #e5e7eb; padding: 10px; border-radius: 12px; background: #f9fafb; display: flex; gap: 8px; align-items: flex-start; }
-          .bookmark-btn { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 20px; transition: transform 0.1s ease; box-shadow: none; margin: 0; }
+          .bookmark-btn { background: transparent; border: 2px solid transparent; cursor: pointer; padding: 4px 8px; font-size: 20px; transition: all 0.2s ease; box-shadow: none; margin: 0; border-radius: 8px; }
           .bookmark-btn:hover { transform: scale(1.1); }
           .bookmark-btn:active { transform: scale(0.95); }
-          .bookmark-btn.bookmarked { color: #1d4ed8; }
-          .bookmark-btn:not(.bookmarked) { color: #9ca3af; }
+          .bookmark-btn.bookmarked { color: #1d4ed8; background: #dbeafe; border-color: #1d4ed8; }
+          .bookmark-btn:not(.bookmarked) { color: #9ca3af; background: #f9fafb; border-color: #e5e7eb; }
+          .bookmark-btn:not(.bookmarked):hover { background: #f3f4f6; border-color: #d1d5db; }
           #bookmarkedPhotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
         </style>
       </head>
