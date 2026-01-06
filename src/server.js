@@ -1042,9 +1042,14 @@ app.get("/", (req, res) => {
               const data = await resp.json();
               if (resp.ok) {
                 const isBookmarked = data.bookmarked === 1;
-                button.classList.toggle('bookmarked', isBookmarked);
-                button.textContent = isBookmarked ? '🔖' : '🔖';
-                button.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this photo';
+
+                // Update ALL bookmark buttons for this photo (search results, project view, lightbox, bookmarked tab)
+                const allBookmarkButtons = document.querySelectorAll('.bookmark-btn[data-photo-id="' + photoId + '"]');
+                allBookmarkButtons.forEach(btn => {
+                  btn.classList.toggle('bookmarked', isBookmarked);
+                  btn.textContent = isBookmarked ? '🔖' : '🔖';
+                  btn.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this photo';
+                });
 
                 // Update lightbox item if present
                 const lightboxItem = lightboxItems.find(item => item.id === photoId);
@@ -1095,7 +1100,7 @@ app.get("/", (req, res) => {
                     <em>\${r.description}</em>
                   </div>
                   <div class="actions">
-                    <button type="button" class="bookmark-btn bookmarked" data-id="\${r.id}" title="Remove bookmark">🔖</button>
+                    <button type="button" class="bookmark-btn bookmarked" data-photo-id="\${r.id}" title="Remove bookmark">🔖</button>
                     <button type="button" data-url="\${r.image_url}">Open full-size</button>
                   </div>
                 \`;
@@ -1170,6 +1175,7 @@ app.get("/", (req, res) => {
             lightboxBookmark.classList.toggle('bookmarked', isBookmarked);
             lightboxBookmark.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this photo';
             lightboxBookmark.dataset.photoId = current.id;
+            lightboxBookmark.setAttribute('data-photo-id', current.id);
           }
 
           closeLightboxBtn.addEventListener('click', closeLightbox);
@@ -1302,7 +1308,7 @@ app.get("/", (req, res) => {
                 '</div>' +
                 '<div class="actions">' +
                 '<div class="stack">' +
-                '<button type="button" class="bookmark-btn ' + (isBookmarked ? 'bookmarked' : '') + '" data-bookmark-id="' + r.id + '" title="' + (isBookmarked ? 'Remove bookmark' : 'Bookmark this photo') + '">🔖</button>' +
+                '<button type="button" class="bookmark-btn ' + (isBookmarked ? 'bookmarked' : '') + '" data-photo-id="' + r.id + '" title="' + (isBookmarked ? 'Remove bookmark' : 'Bookmark this photo') + '">🔖</button>' +
                 '<button type="button" data-context="' + r.id + '">View contexts</button>' +
                 '<button type="button" data-url="' + r.image_url + '">Open full-size</button>' +
                 '</div>' +
@@ -1596,7 +1602,7 @@ app.get("/", (req, res) => {
                 </div>
                 <div class="actions">
                   <div class="stack">
-                    <button type="button" class="bookmark-btn \${isBookmarked ? 'bookmarked' : ''}" data-id="\${r.id}" title="\${isBookmarked ? 'Remove bookmark' : 'Bookmark this photo'}">🔖</button>
+                    <button type="button" class="bookmark-btn \${isBookmarked ? 'bookmarked' : ''}" data-photo-id="\${r.id}" title="\${isBookmarked ? 'Remove bookmark' : 'Bookmark this photo'}">🔖</button>
                     <span class="score">Score \${r.score.toFixed(3)}</span>
                   </div>
                   <button type="button" data-url="\${r.image_url}">Open full-size</button>
